@@ -25,14 +25,14 @@ pip install -r requirements.txt
 ### 2. 运行程序
 将上述配置文件夹路径设置好后，直接运行脚本：
 ```bash
-python script_name.py
+python run.py
 ```
 
 ### 3. 查看日志
 日志文件会生成在当前目录下，文件名为`image_processing.log`。您可以查看该文件以获取处理过程中的详细信息。
 
 ## 代码结构
-- `script_name.py`：主脚本文件。
+- `run.py`：主脚本文件。
 - `model/`：存放序列化的模型和处理器文件。
 - `img_path/`：存放待处理的图像文件。
 - `nsfw/`：存放检测为NSFW的图像文件。
