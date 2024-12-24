@@ -25,7 +25,7 @@ pip install -r requirements.txt
 ### 2. 运行程序
 将上述配置文件夹路径设置好后，直接运行脚本：
 ```bash
-python run.py
+python start.py
 ```
 
 ### 3. 查看日志
