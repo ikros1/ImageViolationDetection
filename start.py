@@ -99,11 +99,12 @@ def file_distributor(files, task_queues):
             all_files_processed = True
             break
         file_name = files.pop(0)
+        progress_bar.update(1)  # 更新进度条
         for q in task_queues:
             if q.empty():
                 q.put(file_name)
                 break
-        time.sleep(0.01)  # 防止CPU占用过高
+        time.sleep(0.001)  # 防止CPU占用过高
 
 
 # 处理文件的函数
@@ -143,7 +144,7 @@ def process_file(task_queue):
 
                 # 移动文件
                 shutil.move(file_name, target_path)
-                progress_bar.update(1)  # 更新进度条
+
                 # logging.info(f"文件 {file_name} 被移动到 {target_path}")
 
         except FileNotFoundError:
