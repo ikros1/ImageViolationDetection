@@ -98,14 +98,17 @@ def file_distributor(files, task_queues):
         if not files:
             all_files_processed = True
             break
-        file_name = files.pop(0)
-        progress_bar.update(1)  # 更新进度条
+        file_name = files.pop(0)  # 从文件列表中弹出一个文件
+        placed = False
         for q in task_queues:
-            if q.empty():
-                q.put(file_name)
+            if q.empty():  # 找到第一个空闲的任务队列
+                q.put(file_name)  # 将文件放入该队列
+                placed = True
+                progress_bar.update(1)  # 更新进度条
                 break
+        if not placed:
+            files.append(file_name)  # 如果没有找到空闲队列，将文件重新放回列表末尾
         time.sleep(0.001)  # 防止CPU占用过高
-
 
 # 处理文件的函数
 def process_file(task_queue):
