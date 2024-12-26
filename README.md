@@ -12,24 +12,24 @@
 
 ## 安装依赖
 在运行此项目之前，请确保您的系统上安装了以下依赖项：
+此项目需要计算机配置ffmpeg
 ```bash
 pip install -r requirements.txt
 ```
-
 ## 使用方法
 
-### 1. 配置文件夹路径
-- `folder_path`：指定要处理的图像所在的文件夹路径。
-- `target_folder1` 和 `target_folder2`：分别指定NSFW图像和正常图像的目标文件夹路径。
+### 1. 把待分类的图片放到img_path
 
 ### 2. 运行程序
 将上述配置文件夹路径设置好后，直接运行脚本：
 ```bash
 python start.py
 ```
-
 ### 3. 查看日志
 日志文件会生成在当前目录下，文件名为`image_processing.log`。您可以查看该文件以获取处理过程中的详细信息。
+
+### 4. 收取打包分类的成品
+分类转换为png并重命名打包好的图片文件夹在target文件夹下，nsfw为工作不适宜图片，normal为正常图片
 
 ## 代码结构
 - `run.py`：主脚本文件。
@@ -56,14 +56,12 @@ project/
 │   └── ...
 ├── nsfw/
 ├── normal/
+├── target
+│   ├──normal
+│   └──nsfw
 └── image_processing.log
 ```
-
-运行脚本后，`img_path`文件夹中的图像将被分类并移动到`nsfw`或`normal`文件夹中。
 
 ## 贡献
 欢迎对本项目提出改进意见或修复bug。请提交pull request或创建issue。
 
-## 许可证
-本项目采用MIT许可证。详情请参阅[LICENSE](LICENSE)文件。
-```

@@ -1,14 +1,19 @@
-import shutil
-import os
 from PIL import Image
 import torch
 from transformers import AutoModelForImageClassification, ViTImageProcessor
-from tqdm import tqdm
-import logging
-import time
 import queue
 import threading
 import pickle
+import subprocess
+import time
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing
+import os
+import shutil
+import random
+import datetime
+from tqdm import tqdm
 
 # 配置日志记录
 log_file = 'image_processing.log'
@@ -110,6 +115,7 @@ def file_distributor(files, task_queues):
             files.append(file_name)  # 如果没有找到空闲队列，将文件重新放回列表末尾
         time.sleep(0.001)  # 防止CPU占用过高
 
+
 # 处理文件的函数
 def process_file(task_queue):
     while True:
@@ -161,6 +167,142 @@ def process_file(task_queue):
         task_queue.task_done()
 
 
+def delete_files_in_directory(directory):
+    # 获取所有文件的列表
+    file_list = []
+    for root, dirs, files in os.walk(directory):
+        for filename in files:
+            file_list.append(os.path.join(root, filename))
+
+    if not file_list:
+        print("指定目录下没有文件。")
+        return
+
+    # 提示用户确认删除操作
+    confirmation = input(f"确定要删除 {len(file_list)} 个文件吗？(y/n): ")
+    if confirmation.lower() != 'y':
+        print("操作已取消。")
+        return
+
+    # 使用 tqdm 添加进度条
+    with tqdm(total=len(file_list), desc="Deleting files", unit="file") as pbar:
+        for file_path in file_list:
+            try:
+                os.remove(file_path)
+                pbar.update(1)
+            except Exception as e:
+                print(f"无法删除文件 {file_path}: {e}")
+
+
+def remove_spaces_in_filenames(directory):
+    # 获取所有文件的列表
+    file_list = []
+    for root, dirs, files in os.walk(directory):
+        for filename in files:
+            if ' ' in filename:
+                file_list.append((root, filename))
+
+    # 使用 tqdm 添加进度条
+    with tqdm(total=len(file_list), desc="Renaming files", unit="file") as pbar:
+        for root, filename in file_list:
+            old_file_path = os.path.join(root, filename)
+            new_filename = filename.replace(' ', '_')  # 使用下划线代替空格
+            new_file_path = os.path.join(root, new_filename)
+
+            # 重命名文件
+            os.rename(old_file_path, new_file_path)
+            pbar.update(1)
+
+
+def create_folder_if_not_exists(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+
+def convert_image(input_path, output_path):
+    try:
+        subprocess.run(
+            ['ffmpeg', '-i', input_path, '-pix_fmt', 'yuv420p', '-color_range', 'pc', output_path],
+            check=True,
+            stderr=subprocess.PIPE
+        )
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to convert {input_path} to {output_path}: {e.stderr.decode()}")
+        return False
+    return True
+
+
+def process_images_in_thread(image_files, from_folder, target_folder, thread_id, progress_queue):
+    for image_file in image_files:
+        input_path = os.path.join(from_folder, image_file)
+        timestamp = int(time.time())
+        random_number = random.randint(1000, 9999)
+        output_filename = f"{timestamp}_{random_number}.png"
+        output_path = os.path.join(target_folder, output_filename)
+
+        if not convert_image(input_path, output_path):
+            print(f"Error processing {image_file}")
+        progress_queue.put(1)
+
+
+def process_images(from_folder, target_folder):
+    create_folder_if_not_exists(target_folder)
+    supported_formats = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')
+    image_files = [f for f in os.listdir(from_folder) if f.lower().endswith(supported_formats)]
+
+    num_cores = multiprocessing.cpu_count()
+    chunk_size = len(image_files) // num_cores + (1 if len(image_files) % num_cores else 0)
+    chunks = [image_files[i:i + chunk_size] for i in range(0, len(image_files), chunk_size)]
+
+    progress_queue = multiprocessing.Queue()
+    with ThreadPoolExecutor(max_workers=num_cores) as executor:
+        futures = [
+            executor.submit(process_images_in_thread, chunk, from_folder, target_folder, thread_id, progress_queue)
+            for thread_id, chunk in enumerate(chunks, start=1)
+        ]
+
+        total_tasks = len(image_files)
+        with tqdm(total=total_tasks, desc=f"Processing {from_folder}") as pbar:
+            completed_tasks = 0
+            while completed_tasks < total_tasks:
+                if not progress_queue.empty():
+                    completed_tasks += progress_queue.get()
+                    pbar.update(1)
+
+
+def batch_move_files(source_dir, target_dir, batch_size=50):
+    # 确保目标目录存在
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+
+    # 获取源目录中的所有文件
+    files = [f for f in os.listdir(source_dir) if os.path.isfile(os.path.join(source_dir, f))]
+
+    # 计算总批次数
+    total_batches = (len(files) + batch_size - 1) // batch_size
+
+    # 使用 tqdm 显示进度条
+    with tqdm(total=total_batches, desc="Processing batches", unit="batch") as pbar:
+        for i in range(0, len(files), batch_size):
+            batch_files = files[i:i + batch_size]
+
+            # 创建一个新的子目录，使用时间戳和随机数命名
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            random_number = random.randint(1000, 9999)
+            batch_dir_name = f"batch_{timestamp}_{random_number}"
+            batch_dir_path = os.path.join(target_dir, batch_dir_name)
+            os.makedirs(batch_dir_path, exist_ok=True)
+
+            # 将文件移动到新的子目录
+            for file_name in batch_files:
+                source_file_path = os.path.join(source_dir, file_name)
+                target_file_path = os.path.join(batch_dir_path, file_name)
+                shutil.move(source_file_path, target_file_path)
+
+            # 更新进度条
+            pbar.update(1)
+
+
 if __name__ == '__main__':
     logging.info(f"使用 {num_workers} 个线程进行处理")
 
@@ -194,4 +336,19 @@ if __name__ == '__main__':
     distributor_thread.join()
 
     progress_bar.close()  # 关闭进度条
-    logging.info("所有文件处理完毕")
+    logging.info("所有文件分类完毕")
+
+    from_folder_paths = ['nsfw', 'normal']  # 替换为你的文件夹路径
+    target_folder_paths = ['from/nsfw_png', 'from/normal_png']
+
+    for from_folder, target_folder in zip(from_folder_paths, target_folder_paths):
+        remove_spaces_in_filenames(from_folder)
+        process_images(from_folder, target_folder)
+        delete_files_in_directory(from_folder)
+
+    source_directory = 'from/normal_png'
+    target_directory = 'target/normal'
+    batch_move_files(source_directory, target_directory)
+    source_directory = 'from/nsfw_png'
+    target_directory = 'target/nsfw'
+    batch_move_files(source_directory, target_directory)
